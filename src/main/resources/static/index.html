@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SRT Translator</title>
+    <script src="https://unpkg.com/htmx.org@2.0.2"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            position: relative;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            max-width: 500px;
+            width: 100%;
+            position: relative;
+        }
+        h1 {
+            margin-top: 0;
+            color: #333;
+        }
+        .powered-by {
+            display: flex;
+            align-items: center;
+            color: #555;
+            margin-top: 5px;
+        }
+        .powered-by img {
+            width: 40px; /* Adjust the size to fit with the text */
+            height: auto;
+            margin-right: 8px;
+        }
+        label {
+            display: block;
+            margin: 10px 0 5px;
+        }
+        input[type="file"], select, button {
+            width: 100%;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .spinner {
+            display: none;
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-radius: 50%;
+            border-top: 4px solid #007bff;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .error {
+            color: red;
+            margin-top: 10px;
+            display: none;
+        }
+        .progress-container {
+            width: 100%;
+            background-color: #ddd;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .progress-bar {
+            height: 20px;
+            width: 0;
+            background-color: #007bff;
+            border-radius: 4px;
+            text-align: center;
+            color: white;
+            line-height: 20px;
+        }
+    </style>
+    <script>
+        function submitFormAsJson(event) {
+            event.preventDefault(); // Prevent the default form submission
+
+            const sourceFileInput = document.getElementById("sourceFile");
+            const sourceLanguage = document.getElementById("sourceLanguage").value;
+            const targetLanguage = document.getElementById("targetLanguage").value;
+            const spinner = document.getElementById("spinner");
+            const progressBar = document.getElementById("progressBar");
+            const progressText = document.getElementById("progressText");
+            const errorDiv = document.getElementById("error");
+
+            if (sourceLanguage === targetLanguage) {
+                errorDiv.textContent = "Source and target languages cannot be the same.";
+                errorDiv.style.display = "block"; // Show the error
+                return;
+            }
+
+            errorDiv.style.display = "none"; // Hide any previous errors
+
+            const sourceFile = sourceFileInput.files[0];
+
+            if (!sourceFile) {
+                errorDiv.textContent = "Please select a source file.";
+                errorDiv.style.display = "block"; // Show the error
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append("sourceFile", sourceFile);
+            formData.append("sourceLanguage", sourceLanguage);
+            formData.append("targetLanguage", targetLanguage);
+
+            spinner.style.display = "block"; // Show the spinner
+            progressBar.style.width = "0%";
+            progressText.textContent = "0%";
+
+            fetch('/srt/translate', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.blob(); // Get the response as a Blob (binary large object)
+                } else {
+                    throw new Error("Error in response");
+                }
+            })
+            .then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "translated_file.srt"; // Suggest a file name
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                errorDiv.textContent = "An error occurred while processing the file.";
+                errorDiv.style.display = "block"; // Show the error
+            })
+            .finally(() => {
+                spinner.style.display = "none"; // Hide the spinner
+            });
+
+            // Polling for progress updates
+            const intervalId = setInterval(() => {
+                fetch('/srt/progress')
+                    .then(response => response.json())
+                    .then(progress => {
+                        const { totalChunks, processedChunks } = progress;
+                        const percentage = Math.min((processedChunks / totalChunks) * 100, 100);
+                        progressBar.style.width = `${percentage}%`;
+                        progressText.textContent = `${Math.round(percentage)}%`;
+
+                        if (percentage >= 100) {
+                            clearInterval(intervalId);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error fetching progress:', error);
+                        clearInterval(intervalId);
+                    });
+            }, 5000); // Update every 5 seconds
+        }
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h1>SRT Translator</h1>
+        
+        <!-- Powered by Spring AI header with image -->
+        <div class="powered-by">
+            <img src="images/spring.png" alt="Spring Boot Logo">
+            <h3>Powered by Spring AI</h3>
+        </div>
+
+        <!-- Form for input parameters -->
+        <form onsubmit="submitFormAsJson(event)">
+            <div>
+                <label for="sourceFile">Please select an SRT File:</label>
+                <input type="file" id="sourceFile" name="sourceFile" required>
+            </div>
+            <div>
+                <label for="sourceLanguage">Source Language:</label>
+                <select id="sourceLanguage" name="sourceLanguage" required>
+                    <!-- Options will be populated by JavaScript -->
+                </select>
+            </div>
+            <div>
+                <label for="targetLanguage">Target Language:</label>
+                <select id="targetLanguage" name="targetLanguage" required>
+                    <!-- Options will be populated by JavaScript -->
+                </select>
+            </div>
+            <button type="submit">Start Translation</button>
+            <div id="error" class="error"></div>
+        </form>
+
+        <!-- Spinner for processing indication -->
+        <div id="spinner" class="spinner"></div>
+
+        <!-- Progress bar for feedback -->
+        <div class="progress-container">
+            <div id="progressBar" class="progress-bar"></div>
+        </div>
+        <div id="progressText">0%</div>
+
+        <!-- Placeholder for the result -->
+        <div id="result"></div>
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const languages = [
+                "Afrikaans", "Arabic", "Bengali", "Bulgarian", "Catalan", "Chinese (Simplified)",
+                "Chinese (Traditional)", "Croatian", "Czech", "Danish", "Dutch", "English",
+                "Estonian", "Finnish", "French", "Galician", "German", "Greek", "Hebrew",
+                "Hindi", "Hungarian", "Icelandic", "Indonesian", "Irish", "Italian", "Japanese",
+                "Korean", "Latvian", "Lithuanian", "Macedonian", "Malay", "Maltese", "Norwegian",
+                "Polish", "Portuguese", "Romanian", "Russian", "Serbian", "Slovak", "Slovenian",
+                "Spanish", "Swahili", "Swedish", "Tamil", "Telugu", "Thai", "Turkish", "Ukrainian",
+                "Urdu", "Vietnamese"
+            ];
+
+            const sourceLanguageSelect = document.getElementById("sourceLanguage");
+            const targetLanguageSelect = document.getElementById("targetLanguage");
+
+            languages.forEach(lang => {
+                const option = document.createElement("option");
+                option.value = lang;
+                option.textContent = lang;
+                sourceLanguageSelect.appendChild(option);
+                targetLanguageSelect.appendChild(option.cloneNode(true)); // Copy option to targetLanguageSelect
+            });
+
+            // Set default values
+            sourceLanguageSelect.value = "English";
+            targetLanguageSelect.value = "Hebrew";
+        });
+    </script>
+</body>
+</html>

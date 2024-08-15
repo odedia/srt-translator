@@ -1,0 +1,5 @@
+spring:
+  config:
+    import: "optional:classpath:/creds.yaml"
+  application:
+    name: srt-translator

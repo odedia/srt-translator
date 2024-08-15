@@ -1,0 +1,10 @@
+spring:
+  ai:
+    azure:
+      openai:
+        api-key: "<provide here>"
+        endpoint: "<provide here>"
+        chat:
+          options:
+            temperature: 0.8
+            deployment-name: "gpt-4o"
